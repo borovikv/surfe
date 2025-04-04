@@ -3,3 +3,4 @@ pyarrow==18.1.0
 awswrangler==3.11.0
 pytest==8.3.5
 moto==5.1.2
+apache-airflow==2.10.5

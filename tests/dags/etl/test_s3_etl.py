@@ -38,7 +38,11 @@ def test_get_unprocessed_files(bucket):
     for path in output_paths:
         awswrangler.s3.upload(io.BytesIO('anything'.encode('utf-8')), path=path)
 
-    result = subject.get_unprocessed_files(logical_date=pd.Timestamp.utcnow(), bucket=bucket)
+    result = subject.get_unprocessed_files(
+        data_interval_start=pd.Timestamp.utcnow() - pd.Timedelta(days=1),
+        data_interval_end=pd.Timestamp.utcnow(),
+        bucket=bucket
+    )
 
     expected = [
         f's3://{bucket}/company/202504/partition_by_column=FR/cadabra.json.gz',

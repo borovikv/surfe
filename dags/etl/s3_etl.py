@@ -11,12 +11,12 @@ def convert_to_parquet(input_path: str):
     awswrangler.s3.to_parquet(df, path=output_path)
 
 
-def get_unprocessed_files(logical_date, bucket):
-    path = f's3://{bucket}/company/{logical_date.strftime("%Y%m")}/'
-    output_path = f's3://{bucket}/results/company/{logical_date.strftime("%Y%m")}/'
+def get_unprocessed_files(data_interval_start, data_interval_end, bucket):
+    path = f's3://{bucket}/company/{data_interval_start.strftime("%Y%m")}/'
+    output_path = f's3://{bucket}/results/company/{data_interval_start.strftime("%Y%m")}/'
     time_window = dict(
-        last_modified_begin=logical_date - timedelta(days=1, hours=1),
-        last_modified_end=logical_date
+        last_modified_begin=data_interval_start,
+        last_modified_end=data_interval_end
     )
     output_files = awswrangler.s3.list_objects(output_path, **time_window)
     processed_files = [base_file_name(x, start=4, ext='parquet') + 'json.gz' for x in output_files]
