@@ -1,0 +1,7 @@
+[report]
+omit =
+    tests/*
+    dags/etl/local_mocks.py
+    dags/simple_etl.py
+    webserver_config.py
+    __init__.py

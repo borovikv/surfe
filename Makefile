@@ -15,3 +15,19 @@ build:
 
 up:
 	docker compose up
+
+
+clean:
+	find . -name "*.pyc" -type f -delete
+
+
+tests:
+	make clean
+	PYTHONPATH=./dags/etl \
+	pytest -s -vv --cov=. --testdox --cov-report term-missing
+
+
+docker-test:
+	docker compose exec airflow-webserver \
+		pytest -s -vv --cov=. --testdox --cov-report term-missing -W ignore::DeprecationWarning
+

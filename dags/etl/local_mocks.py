@@ -1,8 +1,11 @@
 import datetime
+from io import BytesIO
 from typing import Any, Literal, Callable
+from urllib.parse import urlparse
 
 import awswrangler.s3
 import boto3
+import pandas as pd
 from awswrangler.typing import RaySettings
 
 
@@ -93,3 +96,30 @@ def read_json(
         ray_args=ray_args,
         **pandas_kwargs,
     )
+
+
+def to_parquet(df, path):
+    s3_client = s3()
+    with BytesIO() as buf:
+        df.to_parquet(buf)
+        s3_client.put_object(**split_s3_path(path), Body=buf.getvalue())
+
+
+def read_parquet(path):
+    s3_client = s3()
+    if isinstance(path, str):
+        path = [path]
+    dfs = []
+    for p in path:
+        response = s3_client.get_object(**split_s3_path(p))
+        parquet_data = response['Body'].read()
+        with BytesIO(parquet_data) as buf:
+            dfs.append(pd.read_parquet(buf))
+    return pd.concat(dfs, ignore_index=True)
+
+
+def split_s3_path(s3_path):
+    parsed_url = urlparse(s3_path)
+    bucket = parsed_url.netloc
+    key = parsed_url.path.lstrip('/')
+    return dict(Bucket=bucket, Key=key)

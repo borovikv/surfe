@@ -1,6 +1,13 @@
-pandas==2.2.3
+pandas==2.1.4
 pyarrow==18.1.0
 awswrangler==3.11.0
 pytest==8.3.5
 moto==5.1.2
 apache-airflow==2.10.5
+coverage==7.8.0
+pytest-cov==6.1.0
+pytest-testdox==3.1.0
+
+boto3~=1.37.27
+SQLAlchemy~=1.4.54
+psycopg2-binary

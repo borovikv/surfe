@@ -5,6 +5,8 @@ import re
 
 import awswrangler.s3
 import boto3
+import numpy as np
+import sqlalchemy
 
 
 def start_mock_s3(bucket, data_interval_start):
@@ -28,7 +30,7 @@ def get_unprocessed_files(data_interval_start, data_interval_end, bucket):
     )
 
     output_files = awswrangler.s3.list_objects(path=output_path, **time_window)
-    processed_files = [base_file_name(x, start=4, ext='parquet') + 'json.gz' for x in output_files]
+    processed_files = [base_file_name(str(x), start=4, ext='parquet') + 'json.gz' for x in output_files]
     input_files = awswrangler.s3.list_objects(
         path=input_path,
         ignore_suffix=processed_files,
@@ -47,6 +49,7 @@ def convert_files(task_instance):
     result = []
     for path in task_instance.xcom_pull('get_unprocessed_files'):
         result.append(convert_to_parquet(path))
+    return result
 
 
 def convert_to_parquet(input_path: str):
@@ -58,3 +61,49 @@ def convert_to_parquet(input_path: str):
     logging.info(f'Writing DataFrame {df.shape} to {output_path}')
     awswrangler.s3.to_parquet(df, path=output_path)
     return output_path
+
+
+def write_to_postgres(task_instance):
+    parquet_files = task_instance.xcom_pull('convert_files')
+    df = awswrangler.s3.read_parquet(parquet_files)
+    if df.empty:
+        logging.warning('Nothing to save')
+        return
+
+    dtype = {c: sqlalchemy.types.JSON for c in df.columns
+             if isinstance(df[c].iloc[0], (np.ndarray, dict, list))}
+    for c in df.columns:
+        df[c] = df[c].apply(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+
+    df = df[df.columns[:50]]
+    db_name = 'postgres'
+    table_name = 'temp_company_info'
+    engine = get_engine(db_name)
+    df.to_sql(name=table_name, con=engine, index=False, if_exists='replace', dtype=dtype)
+
+    logging.info(f"Data written successfully to table '{table_name}' in database '{db_name}'!")
+
+
+def get_engine(db_name):
+    db_user = "airflow"
+    db_password = "airflow"
+    db_host = "postgres"
+    db_port = 5432
+    connection_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    engine = sqlalchemy.create_engine(connection_string)
+    return engine
+
+
+def upsert(engine):
+    # Perform bulk upsert using SQL
+    table_name = 'result_company_info'
+    bulk_upsert_query = f"""
+        INSERT INTO {table_name} (id, name, age)
+        SELECT id, name, age FROM temp_table
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            age = EXCLUDED.age;
+    """
+    with engine.connect() as connection:
+        connection.execute(sqlalchemy.text(bulk_upsert_query))
+    logging.info("Bulk upsert completed successfully!")

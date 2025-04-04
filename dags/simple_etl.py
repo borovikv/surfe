@@ -5,7 +5,7 @@ from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
 
-from etl.local_mocks import list_objects, read_json
+from etl.local_mocks import list_objects, read_json, to_parquet, read_parquet
 import etl.s3_etl as e
 
 
@@ -43,7 +43,16 @@ def wrapped_convert_files(task_instance):
     The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
     """
     with patch('awswrangler.s3.read_json', side_effect=read_json):
-        return e.convert_files(task_instance)
+        with patch('awswrangler.s3.to_parquet', side_effect=to_parquet):
+            return e.convert_files(task_instance)
+
+
+def wrapped_write_to_postgres(task_instance):
+    """
+    The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
+    """
+    with patch('awswrangler.s3.read_parquet', side_effect=read_parquet):
+        return e.write_to_postgres(task_instance)
 
 
 with DAG(
@@ -58,14 +67,19 @@ with DAG(
         python_callable=e.start_mock_s3,
         op_kwargs={'bucket': BUCKET_NAME},
     ) >> PythonOperator(
-        task_id="get_unprocessed_files",
+        task_id='get_unprocessed_files',
         python_callable=wrapped_get_unprocessed_files,
         op_kwargs={'bucket': BUCKET_NAME},
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
     ) >> PythonOperator(
-        task_id="convert_files",
+        task_id='convert_files',
         python_callable=wrapped_convert_files,
+        retries=2,
+        retry_delay=datetime.timedelta(seconds=300),
+    ) >> PythonOperator(
+        task_id='write_to_postgres',
+        python_callable=wrapped_write_to_postgres,
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
     )

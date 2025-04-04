@@ -1,4 +1,6 @@
+import datetime
 import io
+from unittest.mock import MagicMock
 
 import awswrangler.s3
 import pandas as pd
@@ -39,8 +41,8 @@ def test_get_unprocessed_files(bucket):
         awswrangler.s3.upload(io.BytesIO('anything'.encode('utf-8')), path=path)
 
     result = subject.get_unprocessed_files(
-        data_interval_start=pd.Timestamp.utcnow() - pd.Timedelta(days=1),
-        data_interval_end=pd.Timestamp.utcnow(),
+        data_interval_start=datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1),
+        data_interval_end=datetime.datetime.now(datetime.UTC),
         bucket=bucket
     )
 
@@ -58,3 +60,22 @@ def test_base_file_name():
     assert result == 'bucket/company/202504/partition_by_column=FR/cadabra.'
     result = subject.base_file_name(path, start=3, ext='json.gz')
     assert result == 'company/202504/partition_by_column=FR/cadabra.'
+
+
+def test_write_to_postgres(bucket):
+    df = pd.DataFrame({
+        'id': [1, 2],
+        'name': ['Alice', 'Bob'],
+        'age': [25, 30]
+    })
+    s3_path = f's3://{bucket}/some/path/name.parquet'
+    awswrangler.s3.to_parquet(df, s3_path)
+
+    subject.write_to_postgres(MagicMock(xcom_pull=lambda *_: [s3_path]))
+
+    df_from_db = pd.read_sql_table('temp_company_info', con=subject.get_engine('postgres'))
+
+    pd.testing.assert_frame_equal(
+        df_from_db.sort_values('id').reset_index(drop=True),
+        df.sort_values('id').reset_index(drop=True)
+    )
