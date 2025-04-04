@@ -3,7 +3,8 @@ import datetime
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
-from etl.s3_etl import get_unprocessed_files
+
+from etl.s3_etl import get_unprocessed_files, start_mock_s3
 
 
 def notify_failure(context):
@@ -24,6 +25,8 @@ def notify_failure(context):
     print(slack_msg)
 
 
+bucket_name = 'a-bucket'
+
 with DAG(
         "simple_etl",
         timetable=CronDataIntervalTimetable('0 0 * * *', timezone='UTC'),
@@ -32,9 +35,13 @@ with DAG(
         catchup=False,
 ) as dag:
     PythonOperator(
+        task_id='start_mock_s3',
+        python_callable=start_mock_s3,
+        op_kwargs={'bucket': bucket_name},
+    ) >> PythonOperator(
         task_id="get_unprocessed_files",
         python_callable=get_unprocessed_files,
-        op_kwargs={'bucket': 'a-bucket'},
+        op_kwargs={'bucket': bucket_name},
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
     )

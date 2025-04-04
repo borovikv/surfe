@@ -53,4 +53,8 @@ def test_get_unprocessed_files(bucket):
 
 
 def test_base_file_name():
-    pass
+    path = 's3://bucket/company/202504/partition_by_column=FR/cadabra.json.gz'
+    result = subject.base_file_name(path, start=2, ext='json.gz')
+    assert result == 'bucket/company/202504/partition_by_column=FR/cadabra.'
+    result = subject.base_file_name(path, start=3, ext='json.gz')
+    assert result == 'company/202504/partition_by_column=FR/cadabra.'
