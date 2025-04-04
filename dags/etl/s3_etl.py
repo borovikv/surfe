@@ -1,4 +1,5 @@
 import glob
+import logging
 import os.path
 import re
 
@@ -43,13 +44,17 @@ def base_file_name(x: str, start: int, ext: str):
 
 
 def convert_files(task_instance):
-    print(task_instance.xcom_pull('get_unprocessed_files'))
+    result = []
     for path in task_instance.xcom_pull('get_unprocessed_files'):
-        convert_to_parquet(path)
+        result.append(convert_to_parquet(path))
 
 
 def convert_to_parquet(input_path: str):
+    logging.info(f'Start processing {input_path}')
     df = awswrangler.s3.read_json(input_path, lines=True)
     path_components = re.match(r'^s3://(?P<bucket>[^/]+)/(?P<file_name>.+)\.json\.gz$', input_path).groupdict()
+
     output_path = 's3://{bucket}/results/{file_name}.parquet'.format(**path_components)
+    logging.info(f'Writing DataFrame {df.shape} to {output_path}')
     awswrangler.s3.to_parquet(df, path=output_path)
+    return output_path

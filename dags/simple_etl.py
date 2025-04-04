@@ -5,8 +5,8 @@ from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
 
-from etl.local_mocks import list_objects
-from etl.s3_etl import get_unprocessed_files, start_mock_s3
+from etl.local_mocks import list_objects, read_json
+import etl.s3_etl as e
 
 
 def notify_failure(context):
@@ -27,7 +27,7 @@ def notify_failure(context):
     print(slack_msg)
 
 
-bucket_name = 'a-bucket'
+BUCKET_NAME = 'a-bucket'
 
 
 def wrapped_get_unprocessed_files(data_interval_start, data_interval_end, bucket):
@@ -35,24 +35,37 @@ def wrapped_get_unprocessed_files(data_interval_start, data_interval_end, bucket
     The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
     """
     with patch('awswrangler.s3.list_objects', side_effect=list_objects):
-        return get_unprocessed_files(data_interval_start, data_interval_end, bucket)
+        return e.get_unprocessed_files(data_interval_start, data_interval_end, bucket)
+
+
+def wrapped_convert_files(task_instance):
+    """
+    The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
+    """
+    with patch('awswrangler.s3.read_json', side_effect=read_json):
+        return e.convert_files(task_instance)
 
 
 with DAG(
         "simple_etl",
         timetable=CronDataIntervalTimetable('0 0 * * *', timezone='UTC'),
         default_args={'on_failure_callback': notify_failure},
-        start_date=datetime.datetime(2025, 4, 1),
+        start_date=datetime.datetime(year=2025, month=4, day=1),
         catchup=False,
 ) as dag:
     PythonOperator(
         task_id='start_mock_s3',
-        python_callable=start_mock_s3,
-        op_kwargs={'bucket': bucket_name},
+        python_callable=e.start_mock_s3,
+        op_kwargs={'bucket': BUCKET_NAME},
     ) >> PythonOperator(
         task_id="get_unprocessed_files",
         python_callable=wrapped_get_unprocessed_files,
-        op_kwargs={'bucket': bucket_name},
+        op_kwargs={'bucket': BUCKET_NAME},
+        retries=2,
+        retry_delay=datetime.timedelta(seconds=300),
+    ) >> PythonOperator(
+        task_id="convert_files",
+        python_callable=wrapped_convert_files,
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
     )

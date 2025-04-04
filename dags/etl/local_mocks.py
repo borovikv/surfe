@@ -1,8 +1,9 @@
 import datetime
-from typing import Any
+from typing import Any, Literal, Callable
 
 import awswrangler.s3
 import boto3
+from awswrangler.typing import RaySettings
 
 
 def list_objects(
@@ -18,7 +19,7 @@ def list_objects(
     """
     Replacement for awswrangler.s3.list_objects so it can work with moto server
     """
-    s3_client = boto3.client('s3', endpoint_url='http://moto:3000')
+    s3_client = s3()
     # On top of user provided ignore_suffix input, add "/"
     ignore_suffix_acc = set("/")
     if isinstance(ignore_suffix, str):
@@ -39,3 +40,56 @@ def list_objects(
     if chunked:
         return result_iterator
     return [path for paths in result_iterator for path in paths]
+
+
+def s3():
+    return boto3.client('s3', endpoint_url='http://moto:3000')
+
+
+def read_json(
+        path: str | list[str],
+        path_suffix: str | list[str] | None = None,
+        path_ignore_suffix: str | list[str] | None = None,
+        version_id: str | dict[str, str] | None = None,
+        ignore_empty: bool = True,
+        orient: str = "columns",
+        use_threads: bool | int = True,
+        last_modified_begin: datetime.datetime | None = None,
+        last_modified_end: datetime.datetime | None = None,
+        s3_additional_kwargs: dict[str, Any] | None = None,
+        dtype_backend: Literal["numpy_nullable", "pyarrow"] = "numpy_nullable",
+        chunksize: int | None = None,
+        dataset: bool = False,
+        partition_filter: Callable[[dict[str, str]], bool] | None = None,
+        ray_args: RaySettings | None = None,
+        **pandas_kwargs: Any,
+):
+    if dtype_backend != "numpy_nullable":
+        pandas_kwargs["dtype_backend"] = dtype_backend
+
+    s3_client = s3()
+
+    if (dataset is True) and ("lines" not in pandas_kwargs):
+        pandas_kwargs["lines"] = True
+    pandas_kwargs["orient"] = orient
+    ignore_index: bool = orient not in ("split", "index", "columns")
+
+    return awswrangler.s3._read_text._read_text_format(
+        read_format="json",
+        path=path,
+        path_suffix=path_suffix,
+        path_ignore_suffix=path_ignore_suffix,
+        version_id=version_id,
+        ignore_empty=ignore_empty,
+        use_threads=use_threads,
+        s3_client=s3_client,
+        s3_additional_kwargs=s3_additional_kwargs,
+        chunksize=chunksize,
+        dataset=dataset,
+        partition_filter=partition_filter,
+        last_modified_begin=last_modified_begin,
+        last_modified_end=last_modified_end,
+        ignore_index=ignore_index,
+        ray_args=ray_args,
+        **pandas_kwargs,
+    )
