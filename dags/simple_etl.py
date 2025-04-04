@@ -1,9 +1,11 @@
 import datetime
+from unittest.mock import patch
 
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
 
+from etl.local_mocks import list_objects
 from etl.s3_etl import get_unprocessed_files, start_mock_s3
 
 
@@ -27,6 +29,15 @@ def notify_failure(context):
 
 bucket_name = 'a-bucket'
 
+
+def wrapped_get_unprocessed_files(data_interval_start, data_interval_end, bucket):
+    """
+    The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
+    """
+    with patch('awswrangler.s3.list_objects', side_effect=list_objects):
+        return get_unprocessed_files(data_interval_start, data_interval_end, bucket)
+
+
 with DAG(
         "simple_etl",
         timetable=CronDataIntervalTimetable('0 0 * * *', timezone='UTC'),
@@ -40,7 +51,7 @@ with DAG(
         op_kwargs={'bucket': bucket_name},
     ) >> PythonOperator(
         task_id="get_unprocessed_files",
-        python_callable=get_unprocessed_files,
+        python_callable=wrapped_get_unprocessed_files,
         op_kwargs={'bucket': bucket_name},
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),

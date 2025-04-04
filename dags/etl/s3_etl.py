@@ -1,24 +1,39 @@
+import glob
+import os.path
 import re
 
 import awswrangler.s3
 import boto3
 
 
-def start_mock_s3(bucket):
-    s3 = boto3.client('s3', endpoint_url='http://moto:3000')
-    s3.create_bucket(Bucket=bucket)
+def start_mock_s3(bucket, data_interval_start):
+    client = boto3.client('s3', endpoint_url='http://moto:3000')
+    client.create_bucket(Bucket=bucket)
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    for p in glob.glob(os.path.join(base_path, 'input/*.json.gz')):
+        name = os.path.basename(p)
+        client.upload_file(Filename=p, Bucket=bucket, Key=f"company/{data_interval_start.strftime("%Y%m")}/{name}")
 
 
 def get_unprocessed_files(data_interval_start, data_interval_end, bucket):
-    path = f's3://{bucket}/company/{data_interval_start.strftime("%Y%m")}/'
+    input_path = f's3://{bucket}/company/{data_interval_start.strftime("%Y%m")}/'
     output_path = f's3://{bucket}/results/company/{data_interval_start.strftime("%Y%m")}/'
     time_window = dict(
         last_modified_begin=data_interval_start,
-        last_modified_end=data_interval_end
+        # Uncomment when running in a real environment.
+        # This limits the number of files processed per task run,
+        # which can be important during backfilling.
+        # last_modified_end=data_interval_end,
     )
-    output_files = awswrangler.s3.list_objects(output_path, **time_window)
+
+    output_files = awswrangler.s3.list_objects(path=output_path, **time_window)
     processed_files = [base_file_name(x, start=4, ext='parquet') + 'json.gz' for x in output_files]
-    input_files = awswrangler.s3.list_objects(path, **time_window, ignore_suffix=processed_files)
+    input_files = awswrangler.s3.list_objects(
+        path=input_path,
+        ignore_suffix=processed_files,
+        suffix='.json.gz',
+        **time_window,
+    )
 
     return input_files
 
