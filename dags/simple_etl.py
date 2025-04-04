@@ -9,9 +9,9 @@ from etl.s3_etl import get_unprocessed_files
 def notify_failure(context):
     slack_msg = f"""
         :red_circle: Task Failed.
-        *Task*: {context['task_instance'].task_id}
         *Dag*: {context['task_instance'].dag_id}
-        *Execution Time*: {context['execution_date']}
+        *Task*: {context['task_instance'].task_id}
+        *Execution Time*: {context['logical_date']}
         *Log Url*: {context['task_instance'].log_url}
     """
     # alert = SlackWebhookOperator(
