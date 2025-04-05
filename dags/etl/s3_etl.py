@@ -72,12 +72,12 @@ def write_to_postgres(task_instance):
     files = task_instance.xcom_pull('get_unprocessed_files')
     if not files:
         logging.warning('Nothing to save')
-        return
+        return False
 
     df = awswrangler.s3.read_json(files, lines=True)
     if df.empty:
         logging.warning('Nothing to save')
-        return
+        return False
 
     dtype = {}
     for c in df.columns:
@@ -89,6 +89,7 @@ def write_to_postgres(task_instance):
     df.to_sql(name=TEMP_TABLE_NAME, con=engine, index=False, if_exists='replace', dtype=dtype)
 
     logging.info(f"Data was written successfully to '{TEMP_TABLE_NAME}' table in '{DB_NAME}' database!")
+    return True
 
 
 def get_engine(db_name):
@@ -111,3 +112,8 @@ def execute_sql(query):
         except Exception as e:
             trans.rollback()
             raise e
+
+
+def check_upsert_required(task_instance):
+    if task_instance.xcom_pull('write_to_postgres'):
+        return 'upsert_company_info'

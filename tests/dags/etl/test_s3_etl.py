@@ -1,10 +1,12 @@
 import datetime
 import io
-from unittest.mock import MagicMock
+from unittest import mock
+from unittest.mock import MagicMock, call
 
 import awswrangler.s3
 import jinja2
 import pandas as pd
+from more_itertools.more import side_effect
 from sqlalchemy import inspect
 
 import dags.etl.s3_etl as subject
@@ -80,6 +82,17 @@ def test_write_to_postgres(bucket):
     )
 
 
+def test_write_to_postgres_when_no_files():
+    assert subject.write_to_postgres(MagicMock(xcom_pull=lambda *_: [])) is False
+
+
+def test_write_to_postgres_when_empty_dataframe(bucket):
+    df = pd.DataFrame()
+    s3_path = f's3://{bucket}/some/path/name.json'
+    awswrangler.s3.to_json(df, s3_path, lines=True, orient='records')
+    assert subject.write_to_postgres(MagicMock(xcom_pull=lambda *_: [s3_path])) is False
+
+
 def test_execute_sql_with_upsert_company_info(bucket):
     name = 'part-00152-37fec780-2ce1-4ccb-b095-72ca81e8094e.c001'
     s3_path = f's3://{bucket}/company/202504/partition_by_column=UK/{name}.json.gz'
@@ -102,3 +115,15 @@ def test_execute_sql_with_upsert_company_info(bucket):
 
     df_from_db = pd.read_sql_table(main_table, con=engine)
     assert df_from_db.shape == pd.read_json(file_path, lines=True).shape
+
+
+@mock.patch('dags.etl.s3_etl.convert_to_parquet', side_effect=[1, 2])
+def test_convert_files(mocked_convert_to_parquet):
+    result = subject.convert_files(task_instance=MagicMock(xcom_pull=lambda *_: ['abra', 'cadabra']))
+    assert mocked_convert_to_parquet.call_args_list == [call('abra'), call('cadabra')]
+    assert result == [1, 2]
+
+
+def test_check_upsert_required():
+    task_instance = MagicMock(xcom_pull=lambda key: {'write_to_postgres': True}[key])
+    assert subject.check_upsert_required(task_instance=task_instance)

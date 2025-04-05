@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from airflow.models import BaseOperator
 from airflow.models.dag import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
 from airflow.utils.context import Context
 
@@ -105,6 +105,9 @@ with DAG(
         python_callable=wrapped_write_to_postgres,
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
+    ) >> BranchPythonOperator(
+        task_id='check_upsert_required',
+        python_callable=e.check_upsert_required
     ) >> SQLOperator(
         query='etl/upsert_company_info.sql'
     )
