@@ -30,9 +30,6 @@ def notify_failure(context):
     print(slack_msg)
 
 
-BUCKET_NAME = 'a-bucket'
-
-
 def wrapped_get_unprocessed_files(data_interval_start, data_interval_end, bucket):
     """
     The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
@@ -88,11 +85,11 @@ with DAG(
     PythonOperator(
         task_id='start_mock_s3',
         python_callable=e.start_mock_s3,
-        op_kwargs={'bucket': BUCKET_NAME},
+        op_kwargs={'bucket': e.BUCKET_NAME},
     ) >> PythonOperator(
         task_id='get_unprocessed_files',
         python_callable=wrapped_get_unprocessed_files,
-        op_kwargs={'bucket': BUCKET_NAME},
+        op_kwargs={'bucket': e.BUCKET_NAME},
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
     ) >> PythonOperator(

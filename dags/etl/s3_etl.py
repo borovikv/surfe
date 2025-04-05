@@ -8,6 +8,7 @@ import boto3
 import sqlalchemy
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+BUCKET_NAME = 'a-bucket'
 
 
 def start_mock_s3(bucket, data_interval_start):
