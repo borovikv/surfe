@@ -7,12 +7,13 @@ import awswrangler.s3
 import boto3
 import sqlalchemy
 
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
 
 def start_mock_s3(bucket, data_interval_start):
     client = boto3.client('s3', endpoint_url='http://moto:3000')
     client.create_bucket(Bucket=bucket)
-    base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    for p in glob.glob(os.path.join(base_path, 'input/*.json.gz')):
+    for p in glob.glob(os.path.join(BASE_PATH, 'input/*.json.gz')):
         name = os.path.basename(p)
         client.upload_file(Filename=p, Bucket=bucket, Key=f"company/{data_interval_start.strftime("%Y%m")}/{name}")
 
@@ -62,6 +63,11 @@ def convert_to_parquet(input_path: str):
     return output_path
 
 
+DB_NAME = 'postgres'
+TEMP_TABLE_NAME = 'temp_company_info'
+MAIN_TABLE_NAME = 'company_info'
+
+
 def write_to_postgres(task_instance):
     files = task_instance.xcom_pull('get_unprocessed_files')
     if not files:
@@ -79,12 +85,10 @@ def write_to_postgres(task_instance):
         if first_valid_idx is not None and isinstance(df.at[first_valid_idx, c], (dict, list)):
             dtype[c] = sqlalchemy.types.JSON
 
-    db_name = 'postgres'
-    table_name = 'temp_company_info'
-    engine = get_engine(db_name)
-    df.to_sql(name=table_name, con=engine, index=False, if_exists='replace', dtype=dtype)
+    engine = get_engine(DB_NAME)
+    df.to_sql(name=TEMP_TABLE_NAME, con=engine, index=False, if_exists='replace', dtype=dtype)
 
-    logging.info(f"Data was written successfully to '{table_name}' table in '{db_name}' database!")
+    logging.info(f"Data was written successfully to '{TEMP_TABLE_NAME}' table in '{DB_NAME}' database!")
 
 
 def get_engine(db_name):
@@ -97,16 +101,13 @@ def get_engine(db_name):
     return engine
 
 
-def upsert(engine):
-    # Perform bulk upsert using SQL
-    table_name = 'result_company_info'
-    bulk_upsert_query = f"""
-        INSERT INTO {table_name} (id, name, age)
-        SELECT id, name, age FROM temp_table
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            age = EXCLUDED.age;
-    """
+def execute_sql(query):
+    engine = get_engine(DB_NAME)
     with engine.connect() as connection:
-        connection.execute(sqlalchemy.text(bulk_upsert_query))
-    logging.info("Bulk upsert completed successfully!")
+        trans = connection.begin()
+        try:
+            connection.execute(sqlalchemy.text(query))
+            trans.commit()
+        except Exception as e:
+            trans.rollback()
+            raise e

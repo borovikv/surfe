@@ -1,12 +1,15 @@
 import datetime
+import os.path
 from unittest.mock import patch
 
+from airflow.models import BaseOperator
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.timetables.interval import CronDataIntervalTimetable
+from airflow.utils.context import Context
 
-from etl.local_mocks import list_objects, read_json, to_parquet, read_parquet
 import etl.s3_etl as e
+from etl.local_mocks import list_objects, read_json, to_parquet
 
 
 def notify_failure(context):
@@ -55,12 +58,32 @@ def wrapped_write_to_postgres(task_instance):
         return e.write_to_postgres(task_instance)
 
 
+class SQLOperator(BaseOperator):
+    ui_color = '#44b5e2'
+    template_fields = ('query',)
+    template_ext = ('.sql',)
+    template_fields_renderers = {'query': 'sql'}
+
+    def __init__(self, *, query, **kwargs):
+        self.query = query
+        if 'task_id' not in kwargs:
+            kwargs['task_id'] = os.path.basename(query).split('.')[0]
+        super().__init__(**kwargs)
+
+    def execute(self, context: Context):
+        e.execute_sql(self.query)
+
+
 with DAG(
-        "simple_etl",
-        timetable=CronDataIntervalTimetable('0 0 * * *', timezone='UTC'),
-        default_args={'on_failure_callback': notify_failure},
-        start_date=datetime.datetime(year=2025, month=4, day=1),
-        catchup=False,
+    "simple_etl",
+    timetable=CronDataIntervalTimetable('0 0 * * *', timezone='UTC'),
+    default_args={'on_failure_callback': notify_failure},
+    start_date=datetime.datetime(year=2025, month=4, day=1),
+    catchup=False,
+    user_defined_macros={
+        'temp_table_name': e.TEMP_TABLE_NAME,
+        'main_table': e.MAIN_TABLE_NAME,
+    }
 ) as dag:
     PythonOperator(
         task_id='start_mock_s3',
@@ -82,4 +105,6 @@ with DAG(
         python_callable=wrapped_write_to_postgres,
         retries=2,
         retry_delay=datetime.timedelta(seconds=300),
+    ) >> SQLOperator(
+        query='etl/upsert_company_info.sql'
     )
