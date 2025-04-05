@@ -5,7 +5,6 @@ import re
 
 import awswrangler.s3
 import boto3
-import numpy as np
 import sqlalchemy
 
 
@@ -64,32 +63,36 @@ def convert_to_parquet(input_path: str):
 
 
 def write_to_postgres(task_instance):
-    parquet_files = task_instance.xcom_pull('convert_files')
-    df = awswrangler.s3.read_parquet(parquet_files)
+    files = task_instance.xcom_pull('get_unprocessed_files')
+    if not files:
+        logging.warning('Nothing to save')
+        return
+
+    df = awswrangler.s3.read_json(files, lines=True)
     if df.empty:
         logging.warning('Nothing to save')
         return
 
-    dtype = {c: sqlalchemy.types.JSON for c in df.columns
-             if isinstance(df[c].iloc[0], (np.ndarray, dict, list))}
+    dtype = {}
     for c in df.columns:
-        df[c] = df[c].apply(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+        first_valid_idx = df[c].first_valid_index()
+        if first_valid_idx is not None and isinstance(df.at[first_valid_idx, c], (dict, list)):
+            dtype[c] = sqlalchemy.types.JSON
 
-    df = df[df.columns[:50]]
     db_name = 'postgres'
     table_name = 'temp_company_info'
     engine = get_engine(db_name)
     df.to_sql(name=table_name, con=engine, index=False, if_exists='replace', dtype=dtype)
 
-    logging.info(f"Data written successfully to table '{table_name}' in database '{db_name}'!")
+    logging.info(f"Data was written successfully to '{table_name}' table in '{db_name}' database!")
 
 
 def get_engine(db_name):
-    db_user = "airflow"
-    db_password = "airflow"
-    db_host = "postgres"
+    db_user = 'airflow'
+    db_password = 'airflow'
+    db_host = 'postgres'
     db_port = 5432
-    connection_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    connection_string = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
     engine = sqlalchemy.create_engine(connection_string)
     return engine
 

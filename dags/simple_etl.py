@@ -51,7 +51,7 @@ def wrapped_write_to_postgres(task_instance):
     """
     The wrapped method is created to make the code runnable in a local Docker container with a Moto server.
     """
-    with patch('awswrangler.s3.read_parquet', side_effect=read_parquet):
+    with patch('awswrangler.s3.read_json', side_effect=read_json):
         return e.write_to_postgres(task_instance)
 
 

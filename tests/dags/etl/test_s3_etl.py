@@ -68,8 +68,8 @@ def test_write_to_postgres(bucket):
         'name': ['Alice', 'Bob'],
         'age': [25, 30]
     })
-    s3_path = f's3://{bucket}/some/path/name.parquet'
-    awswrangler.s3.to_parquet(df, s3_path)
+    s3_path = f's3://{bucket}/some/path/name.json'
+    awswrangler.s3.to_json(df, s3_path, lines=True, orient='records')
 
     subject.write_to_postgres(MagicMock(xcom_pull=lambda *_: [s3_path]))
 
