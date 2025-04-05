@@ -38,7 +38,7 @@ def get_unprocessed_files(data_interval_start, data_interval_end, bucket):
         suffix='.json.gz',
         **time_window,
     )
-
+    logging.info(f'Total number of identified unprocessed files: {len(input_files)}')
     return input_files
 
 
@@ -56,6 +56,8 @@ def convert_files(task_instance):
 def convert_to_parquet(input_path: str):
     logging.info(f'Start processing {input_path}')
     df = awswrangler.s3.read_json(input_path, lines=True)
+    logging.info(f'Total rows to transform from {input_path} is {len(df)}')
+
     path_components = re.match(r'^s3://(?P<bucket>[^/]+)/(?P<file_name>.+)\.json\.gz$', input_path).groupdict()
 
     output_path = 's3://{bucket}/results/{file_name}.parquet'.format(**path_components)
